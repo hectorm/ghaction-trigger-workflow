@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: "Trigger workflow"
+description: "Trigger workflow"
+inputs:
+  workflow-id:
+    description: "ID of the workflow"
+    required: true
+  git-ref:
+    description: "Git reference for the workflow"
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - shell: "bash"
+      env:
+        WORKFLOW_ID: "${{ inputs.workflow-id }}"
+        GIT_REF: "${{ inputs.git-ref }}"
+        GITHUB_TOKEN: "${{ github.token }}"
+      run: |
+        if [ -z "${GIT_REF-}" ]; then
+          GIT_REF="$(curl -fsS --proto '=https' --tlsv1.3 --globoff \
+            --url "https://api.github.com/repos/${GITHUB_REPOSITORY:?}/releases/latest" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN:?}" \
+            --header 'Accept: application/vnd.github.v3+json' \
+            --header 'Content-Type: application/json' \
+            | jq -rc '.tag_name')"
+        fi
+
+        if [ -n "${GIT_REF-}" ] && [ "${GIT_REF:?}" != 'null' ]; then
+          curl -fsS --proto '=https' --tlsv1.3 --globoff \
+            --url "https://api.github.com/repos/${GITHUB_REPOSITORY:?}/actions/workflows/${WORKFLOW_ID:?}/dispatches" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN:?}" \
+            --header 'Accept: application/vnd.github.v3+json' \
+            --header 'Content-Type: application/json' \
+            --data "$(jq -rn --arg ref "${GIT_REF:?}" '{"ref": $ref}')"
+        else
+          exit 1
+        fi
